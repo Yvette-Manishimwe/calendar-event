@@ -4,7 +4,7 @@ import type React from "react"
 
 import { useState } from "react"
 import { format } from "date-fns"
-import type { Event } from "@/lib/types"
+import { EVENT_CATEGORY_COLORS, type Event } from "@/lib/types"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Clock, MapPin, GripVertical, Edit, Trash2, Users } from "lucide-react"
@@ -13,6 +13,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { EventBookingDialog } from "./event-booking-dialog"
 import { useCalendarContext } from "./calendar-provider"
 import { useAuth } from "@/hooks/use-auth"
+import { BookingsApi } from "@/lib/api"
+import { useToast } from "@/hooks/use-toast"
 
 interface DraggableEventCardProps {
   event: Event
@@ -23,15 +25,23 @@ interface DraggableEventCardProps {
 
 export function DraggableEventCard({ event, variant = "compact", onDragStart, onDragEnd }: DraggableEventCardProps) {
   const { title, startTime, endTime, location, category } = event
-  const { deleteEvent, getEventBookings, addBooking, isEventBookedByUser } = useCalendarContext()
-  const { user } = useAuth()
+  const { deleteEvent, getEventBookings, isEventBookedByUser, createBooking } = useCalendarContext()
+ 
   const [isDragging, setIsDragging] = useState(false)
   const [showEditDialog, setShowEditDialog] = useState(false)
 
+  const { user } = useAuth()   // get the current user
+  const { toast } = useToast()
   const eventBookings = getEventBookings(event.id)
+  
+  // Determine if current user already booked this event (from context state)
   const isBooked = user ? isEventBookedByUser(event.id, user.id) : false
-  const availableSpots = event.capacity - eventBookings.length
+
+    
+  // Spots not enforced on backend; rely on bookings count only
   const isAdmin = user?.role === "admin"
+
+
 
   const handleDragStart = (e: React.DragEvent) => {
     if (!isAdmin) {
@@ -71,10 +81,16 @@ export function DraggableEventCard({ event, variant = "compact", onDragStart, on
     }
   }
 
-  const handleBookEvent = (e: React.MouseEvent) => {
+  const handleBookEvent = async (e: React.MouseEvent) => {
     e.stopPropagation()
-    if (user && !isBooked && availableSpots > 0) {
-      addBooking(event.id, user.id)
+    if (!user) return
+  
+    try {
+      await createBooking(event.id)
+      toast({ title: "Booking successful", description: `You booked: ${title}` })
+    } catch (err) {
+      console.error("Booking failed:", err)
+      toast({ title: "Booking failed", description: "Please try again.", variant: "destructive" })
     }
   }
 
@@ -102,31 +118,36 @@ export function DraggableEventCard({ event, variant = "compact", onDragStart, on
   )
 
   const UserActions = () => (
+    
     <Button
       variant={isBooked ? "secondary" : "default"}
       size="sm"
       onClick={handleBookEvent}
-      disabled={isBooked || availableSpots <= 0}
+      disabled={isBooked}
       className="opacity-0 group-hover:opacity-100 transition-opacity"
     >
-      {isBooked ? "Booked" : availableSpots <= 0 ? "Full" : "Book"}
+      {isBooked ? "Booked" : "Book"}
     </Button>
   )
 
   if (variant === "compact") {
     return (
       <>
-        <div
-          draggable={isAdmin}
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
-          className={`
-            ${category.color} text-white text-xs p-1 rounded truncate
-            hover:shadow-md transition-all group
-            ${isAdmin ? "cursor-move" : "cursor-pointer"}
-            ${isDragging ? "opacity-50 scale-95" : ""}
-          `}
-        >
+<div
+  draggable={isAdmin}
+  onDragStart={handleDragStart}
+  onDragEnd={handleDragEnd}
+  className={`
+    text-white text-xs p-1 rounded truncate
+    hover:shadow-md transition-all group
+    ${isAdmin ? "cursor-move" : "cursor-pointer"}
+    ${isDragging ? "opacity-50 scale-95" : ""}
+  `}
+  style={{ backgroundColor: EVENT_CATEGORY_COLORS[category] }}
+>
+  
+
+
           <div className="flex items-center gap-1">
             {isAdmin && <GripVertical className="w-3 h-3 opacity-0 group-hover:opacity-70 transition-opacity" />}
             <div className="flex-1 min-w-0">
@@ -167,7 +188,7 @@ export function DraggableEventCard({ event, variant = "compact", onDragStart, on
               <GripVertical className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-70 transition-opacity mt-0.5" />
             )}
             <div className="flex-1">
-              <div className={`w-2 h-2 rounded-full ${category.color} mb-1`} />
+              <div className="w-2 h-2 rounded-full mb-1" style={{ backgroundColor: EVENT_CATEGORY_COLORS[category] }} />
               <div className="text-xs font-medium truncate">{title}</div>
               <div className="text-xs text-muted-foreground flex items-center gap-1">
                 <span>{format(startTime, "h:mm a")}</span>
@@ -205,7 +226,7 @@ export function DraggableEventCard({ event, variant = "compact", onDragStart, on
           {isAdmin && (
             <GripVertical className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-70 transition-opacity mt-1" />
           )}
-          <div className={`w-3 h-3 rounded-full ${category.color} mt-1 flex-shrink-0`} />
+          <div className="w-3 h-3 rounded-full mt-1 flex-shrink-0" style={{ backgroundColor: EVENT_CATEGORY_COLORS[category] }} />
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
               <div className="font-medium text-sm truncate">{title}</div>
@@ -215,11 +236,7 @@ export function DraggableEventCard({ event, variant = "compact", onDragStart, on
                   {eventBookings.length}/{event.capacity}
                 </Badge>
               )}
-              {event.price && (
-                <Badge variant="secondary" className="text-xs">
-                  ${event.price}
-                </Badge>
-              )}
+              {/* price not defined on Event type */}
             </div>
             <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
               <Clock className="w-3 h-3" />
@@ -233,11 +250,7 @@ export function DraggableEventCard({ event, variant = "compact", onDragStart, on
                 <span className="truncate">{location}</span>
               </div>
             )}
-            {availableSpots <= 0 && (
-              <Badge variant="destructive" className="text-xs mt-1">
-                Event Full
-              </Badge>
-            )}
+            {/* capacity not enforced; hide full badge */}
           </div>
           {isAdmin ? <AdminActions /> : <UserActions />}
         </div>

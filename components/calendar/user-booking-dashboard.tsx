@@ -7,50 +7,83 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useCalendarContext } from "./calendar-provider"
+import type { Event, Booking } from "@/lib/types"
 import { useAuth } from "@/hooks/use-auth"
-import { Calendar, Clock, MapPin, Users, Search, Bell, CheckCircle, XCircle } from "lucide-react"
+import { Calendar as CalendarIcon, Clock, MapPin, Users, Search, Bell, CheckCircle, XCircle, ArrowUpDown } from "lucide-react"
 import { format, isAfter, isBefore } from "date-fns"
+import { EVENT_CATEGORY_COLORS } from "@/lib/types"
+// mini calendar removed for now to keep types simple
+import { Calendar as MiniCalendar } from "@/components/ui/calendar"
 
 export function UserBookingDashboard() {
-  const { events, bookings, cancelBooking } = useCalendarContext()
+  const { events, bookings, cancelBooking, filters, setFilters, refresh } = useCalendarContext()
   const { user } = useAuth()
   const [searchTerm, setSearchTerm] = useState("")
+  const [sortBy, setSortBy] = useState<"date" | "title">("date")
 
-  // Filter bookings for current user
+  // Bookings: endpoint `/bookings/me` is already scoped to current user
   const userBookings = useMemo(() => {
     if (!user) return []
-    return bookings.filter((booking) => booking.userId === user.id)
+    return bookings
   }, [bookings, user])
 
-  // Attach event info to bookings
-  const bookedEvents = useMemo(() => {
+  // Attach event info to bookings, skip those without event
+  const bookedEvents = useMemo<((Booking & { event: Event })[])>(() => {
     return userBookings
       .map((booking) => {
-        const event = events.find((e) => e.id === booking.eventId)
-        return event ? { ...booking, event } : null
+        const inlineEvent = (booking as any).event as (Event | undefined)
+        const eventFromInline = inlineEvent
+          ? ({
+              ...inlineEvent,
+              startTime: new Date((inlineEvent as any).startTime),
+              endTime: new Date((inlineEvent as any).endTime),
+              createdAt: new Date((inlineEvent as any).createdAt || Date.now()),
+              updatedAt: new Date((inlineEvent as any).updatedAt || Date.now()),
+            } as Event)
+          : undefined
+        const event = eventFromInline || events.find((e) => e.id === booking.eventId)
+        return event ? ({ ...(booking as Booking), event } as Booking & { event: Event }) : null
       })
-      .filter(Boolean) as typeof userBookings & { event: typeof events[0] }[]
+      .filter((x): x is Booking & { event: Event } => Boolean(x))
   }, [userBookings, events])
 
   // Upcoming & past bookings
   const upcomingBookings = bookedEvents.filter(
-    (item) => isAfter(new Date(item.event.startTime), new Date())
+    (item) => item.event && isAfter(new Date(item.event.startTime), new Date())
   )
   const pastBookings = bookedEvents.filter(
-    (item) => isBefore(new Date(item.event.endTime), new Date())
+    (item) => item.event && isBefore(new Date(item.event.endTime), new Date())
   )
 
   // Apply search filter
-  const filteredUpcoming = upcomingBookings.filter(
+  let filteredUpcoming = upcomingBookings.filter(
     (item) =>
       item.event.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.event.location?.toLowerCase().includes(searchTerm.toLowerCase())
   )
-  const filteredPast = pastBookings.filter(
+  let filteredPast = pastBookings.filter(
     (item) =>
       item.event.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.event.location?.toLowerCase().includes(searchTerm.toLowerCase())
   )
+
+  // Optional: filter by selected day range if provided
+  if (filters.from) {
+    filteredUpcoming = filteredUpcoming.filter((b) => new Date(b.event.startTime) >= filters.from!)
+    filteredPast = filteredPast.filter((b) => new Date(b.event.endTime) >= filters.from!)
+  }
+  if (filters.to) {
+    filteredUpcoming = filteredUpcoming.filter((b) => new Date(b.event.startTime) <= filters.to!)
+    filteredPast = filteredPast.filter((b) => new Date(b.event.endTime) <= filters.to!)
+  }
+
+  // Sorting
+  const sortFn = (a: Booking & { event: Event }, b: Booking & { event: Event }) => {
+    if (sortBy === "title") return a.event.title.localeCompare(b.event.title)
+    return new Date(a.event.startTime).getTime() - new Date(b.event.startTime).getTime()
+  }
+  filteredUpcoming = [...filteredUpcoming].sort(sortFn)
+  filteredPast = [...filteredPast].sort(sortFn)
 
   const handleCancelBooking = (bookingId: string) => {
     cancelBooking(bookingId)
@@ -66,7 +99,7 @@ export function UserBookingDashboard() {
         </div>
         <div className="flex items-center gap-2">
           <Badge variant="secondary" className="gap-1">
-            <Calendar className="w-3 h-3" />
+            <CalendarIcon className="w-3 h-3" />
             {upcomingBookings.length} Upcoming
           </Badge>
           <Badge variant="outline" className="gap-1">
@@ -76,15 +109,35 @@ export function UserBookingDashboard() {
         </div>
       </div>
 
-      {/* Search */}
-      <div className="relative">
+      {/* Search + Sort + Mini Calendar */}
+      <div className="relative grid gap-3 md:grid-cols-3">
         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
         <Input
           placeholder="Search your bookings..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          className="pl-10"
+          className="pl-10 md:col-span-1"
         />
+
+        <div className="flex items-center gap-2 md:justify-end">
+          <Button variant="outline" size="sm" className="gap-2" onClick={() => setSortBy(sortBy === "date" ? "title" : "date")}>
+            <ArrowUpDown className="w-4 h-4" />
+            Sort by {sortBy === "date" ? "Title" : "Date"}
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => refresh()}>Refresh</Button>
+        </div>
+
+        <div className="md:col-span-1">
+          <MiniCalendar
+            mode="range"
+            selected={{ from: filters.from, to: filters.to } as any}
+            onSelect={(range: any) => {
+              setFilters({ from: range?.from, to: range?.to })
+            }}
+            numberOfMonths={1}
+            showOutsideDays
+          />
+        </div>
       </div>
 
       {/* Tabs */}
@@ -105,7 +158,7 @@ export function UserBookingDashboard() {
           {filteredUpcoming.length === 0 ? (
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-12">
-                <Calendar className="w-12 h-12 text-muted-foreground mb-4" />
+                <CalendarIcon className="w-12 h-12 text-muted-foreground mb-4" />
                 <h3 className="text-lg font-semibold mb-2">No upcoming bookings</h3>
                 <p className="text-muted-foreground text-center">
                   Browse the calendar to discover and book exciting events!
@@ -122,7 +175,7 @@ export function UserBookingDashboard() {
                         <CardTitle className="text-lg">{item.event.title}</CardTitle>
                         <CardDescription className="flex items-center gap-4 mt-2">
                           <span className="flex items-center gap-1">
-                            <Calendar className="w-4 h-4" />
+                            <CalendarIcon className="w-4 h-4" />
                             {format(new Date(item.event.startTime), "MMM dd, yyyy")}
                           </span>
                           <span className="flex items-center gap-1">
@@ -137,14 +190,13 @@ export function UserBookingDashboard() {
                           )}
                         </CardDescription>
                       </div>
-                      {item.event.category && (
-                        <Badge
-                          variant="secondary"
-                          style={{ backgroundColor: item.event.category.color }}
-                        >
-                          {item.event.category.name}
-                        </Badge>
-                      )}
+                      <Badge
+                        variant="secondary"
+                        className="capitalize"
+                        style={{ backgroundColor: EVENT_CATEGORY_COLORS[item.event.category as keyof typeof EVENT_CATEGORY_COLORS] }}
+                      >
+                        {item.event.category}
+                      </Badge>
                     </div>
                   </CardHeader>
                   <CardContent className="pt-0">
@@ -192,7 +244,7 @@ export function UserBookingDashboard() {
                         <CardTitle className="text-lg">{item.event.title}</CardTitle>
                         <CardDescription className="flex items-center gap-4 mt-2">
                           <span className="flex items-center gap-1">
-                            <Calendar className="w-4 h-4" />
+                            <CalendarIcon className="w-4 h-4" />
                             {format(new Date(item.event.startTime), "MMM dd, yyyy")}
                           </span>
                           <span className="flex items-center gap-1">
@@ -207,14 +259,13 @@ export function UserBookingDashboard() {
                           )}
                         </CardDescription>
                       </div>
-                      {item.event.category && (
-                        <Badge
-                          variant="outline"
-                          style={{ borderColor: item.event.category.color }}
-                        >
-                          {item.event.category.name}
-                        </Badge>
-                      )}
+                      <Badge
+                        variant="outline"
+                        className="capitalize"
+                        style={{ borderColor: EVENT_CATEGORY_COLORS[item.event.category as keyof typeof EVENT_CATEGORY_COLORS] }}
+                      >
+                        {item.event.category}
+                      </Badge>
                     </div>
                   </CardHeader>
                   <CardContent className="pt-0">

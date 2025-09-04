@@ -10,36 +10,10 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Eye, EyeOff, AlertCircle } from "lucide-react"
 import { useRouter } from "next/navigation"
 
-// demo accounts with createdAt as Date
-const DEMO_ACCOUNTS = {
-  admin: {
-    email: "admin@eventcal.com",
-    password: "admin123",
-    userData: {
-      id: "admin-1",
-      name: "Sarah Admin",
-      email: "admin@eventcal.com",
-      role: "admin" as const,
-      avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=admin",
-      createdAt: new Date(),
-    },
-  },
-  user: {
-    email: "user@eventcal.com",
-    password: "user123",
-    userData: {
-      id: "user-1",
-      name: "John User",
-      email: "user@eventcal.com",
-      role: "user" as const,
-      avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=user",
-      createdAt: new Date(),
-    },
-  },
-}
+// Demo accounts removed; rely on backend authentication
 
 export function LoginForm() {
-  const { login } = useAuth()
+  const { loginWithCredentials } = useAuth()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
@@ -52,33 +26,20 @@ export function LoginForm() {
     setIsLoading(true)
     setError("")
 
-    await new Promise((resolve) => setTimeout(resolve, 1000))
-
-    const adminAccount = DEMO_ACCOUNTS.admin
-    const userAccount = DEMO_ACCOUNTS.user
-
-    if (email === adminAccount.email && password === adminAccount.password) {
-      router.push("/admin-portal")
-    } else if (email === userAccount.email && password === userAccount.password) {
-      router.push("/user-portal")
-    } else {
-      setError("Invalid email or password. Please use the demo credentials provided below.")
-    }
-
-    setIsLoading(false)
-  }
-
-  const quickLogin = (accountType: "admin" | "user") => {
-    const account = DEMO_ACCOUNTS[accountType]
-    setEmail(account.email)
-    setPassword(account.password)
-    setIsLoading(true)
-
-    setTimeout(() => {
-      login(account.userData)
+    try {
+      const user = await loginWithCredentials(email, password)
+      if (user.role === "admin") {
+        router.push("/admin-portal")
+      } else {
+        router.push("/user-portal")
+      }
+    } catch (err: any) {
+      setError(err?.message || "Login failed. Please check your credentials and try again.")
+    } finally {
       setIsLoading(false)
-    }, 200)
+    }
   }
+
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-cyan-50 to-pink-50 p-4">
@@ -135,19 +96,6 @@ export function LoginForm() {
             </Button>
           </form>
 
-          {/* Demo Quick Login Buttons */}
-          <div className="grid gap-3 mt-4">
-            {["admin", "user"].map((type) => (
-              <Button
-                key={type}
-                onClick={() => quickLogin(type as "admin" | "user")}
-                disabled={isLoading}
-                className="w-full"
-              >
-                Quick Login as {type}
-              </Button>
-            ))}
-          </div>
 
           {/* Create Account Link */}
           <div className="text-center text-sm text-muted-foreground mt-4">

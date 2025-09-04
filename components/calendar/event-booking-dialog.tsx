@@ -19,8 +19,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch"
 import { CalendarIcon, Clock, MapPin, Tag } from "lucide-react"
 import { format, parse, isValid } from "date-fns"
-import type { Event, BookingFormData } from "@/lib/types"
+import { type Event, type BookingFormData, EventCategory, EVENT_CATEGORY_COLORS, EVENT_CATEGORY_LABELS } from "@/lib/types"
 import { useCalendarContext } from "./calendar-provider"
+import { useAuth } from "@/hooks/use-auth"
 
 interface EventBookingDialogProps {
   open: boolean
@@ -31,6 +32,7 @@ interface EventBookingDialogProps {
 
 export function EventBookingDialog({ open, onOpenChange, editingEvent, preselectedDate }: EventBookingDialogProps) {
   const { addEvent, updateEvent, categories } = useCalendarContext()
+  const { currentUser } = useAuth()
 
   const [formData, setFormData] = useState<BookingFormData>(() => {
     if (editingEvent) {
@@ -40,7 +42,7 @@ export function EventBookingDialog({ open, onOpenChange, editingEvent, preselect
         startTime: format(editingEvent.startTime, "HH:mm"),
         endTime: format(editingEvent.endTime, "HH:mm"),
         date: format(editingEvent.startTime, "yyyy-MM-dd"),
-        category: editingEvent.category.id,
+        category: editingEvent.category,
         location: editingEvent.location || "",
         isAllDay: editingEvent.isAllDay || false,
       }
@@ -53,7 +55,7 @@ export function EventBookingDialog({ open, onOpenChange, editingEvent, preselect
       startTime: "09:00",
       endTime: "10:00",
       date: format(defaultDate, "yyyy-MM-dd"),
-      category: categories[0]?.id || "",
+      category: categories[0] || EventCategory.OTHER,
       location: "",
       isAllDay: false,
     }
@@ -110,7 +112,9 @@ export function EventBookingDialog({ open, onOpenChange, editingEvent, preselect
 
     try {
       const selectedDate = new Date(formData.date)
-      const category = categories.find((cat) => cat.id === formData.category)!
+      const category = formData.category as EventCategory
+
+
 
       let startTime: Date
       let endTime: Date
@@ -126,7 +130,7 @@ export function EventBookingDialog({ open, onOpenChange, editingEvent, preselect
         endTime = new Date(selectedDate.setHours(endHour, endMinute, 0, 0))
       }
 
-      const eventData = {
+      const eventData: Omit<Event, "id" | "createdAt" | "updatedAt"> = {
         title: formData.title.trim(),
         description: formData.description.trim() || undefined,
         startTime,
@@ -134,7 +138,15 @@ export function EventBookingDialog({ open, onOpenChange, editingEvent, preselect
         category,
         location: formData.location.trim() || undefined,
         isAllDay: formData.isAllDay,
-      }
+        color: EVENT_CATEGORY_COLORS[formData.category as EventCategory],// optional
+        isPublic: true, // or from a form field
+        requiresApproval: false, // or from a form field
+        capacity: undefined, // optional
+        createdBy: currentUser?.id || "", // you must provide the User entity who creates the event
+        bookings: [], // empty array by default
+        
+      };
+      
 
       if (editingEvent) {
         updateEvent(editingEvent.id, eventData)
@@ -149,10 +161,11 @@ export function EventBookingDialog({ open, onOpenChange, editingEvent, preselect
         startTime: "09:00",
         endTime: "10:00",
         date: format(new Date(), "yyyy-MM-dd"),
-        category: categories[0]?.id || "",
+        category: categories[0] || EventCategory.OTHER, // use the enum value directly
         location: "",
         isAllDay: false,
       })
+      
       setErrors({})
       onOpenChange(false)
     } catch (error) {
@@ -269,27 +282,27 @@ export function EventBookingDialog({ open, onOpenChange, editingEvent, preselect
 
           {/* Category */}
           <div className="space-y-2">
-            <Label htmlFor="category" className="flex items-center gap-1">
-              <Tag className="w-4 h-4" />
-              Category *
-            </Label>
-            <Select value={formData.category} onValueChange={(value) => updateFormData("category", value)}>
-              <SelectTrigger className={errors.category ? "border-destructive" : ""}>
-                <SelectValue placeholder="Select a category" />
-              </SelectTrigger>
-              <SelectContent>
-                {categories.map((category) => (
-                  <SelectItem key={category.id} value={category.id}>
-                    <div className="flex items-center gap-2">
-                      <div className={`w-3 h-3 rounded-full ${category.color}`} />
-                      {category.name}
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {errors.category && <p className="text-sm text-destructive">{errors.category}</p>}
+  <Label htmlFor="category" className="flex items-center gap-1">
+    <Tag className="w-4 h-4" />
+    Category *
+  </Label>
+  <Select value={formData.category} onValueChange={(value) => updateFormData("category", value as EventCategory)}>
+    <SelectTrigger className={errors.category ? "border-destructive" : ""}>
+      <SelectValue placeholder="Select a category" />
+    </SelectTrigger>
+    <SelectContent>
+      {Object.values(EventCategory).map((cat) => (
+        <SelectItem key={cat} value={cat}>
+          <div className="flex items-center gap-2">
+            <div className={`w-3 h-3 rounded-full`} style={{ backgroundColor: EVENT_CATEGORY_COLORS[cat] }} />
+            {EVENT_CATEGORY_LABELS[cat]}
           </div>
+        </SelectItem>
+      ))}
+    </SelectContent>
+  </Select>
+  {errors.category && <p className="text-sm text-destructive">{errors.category}</p>}
+</div>
 
           {/* Location */}
           <div className="space-y-2">

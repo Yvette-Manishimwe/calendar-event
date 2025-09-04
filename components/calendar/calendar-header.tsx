@@ -10,7 +10,7 @@ import { useAuth } from "@/hooks/use-auth"
 import { format, addMonths, subMonths, addWeeks, subWeeks, addDays, subDays } from "date-fns"
 
 export function CalendarHeader() {
-  const { view, setView } = useCalendarContext()
+  const { view, setView, filters, setFilters } = useCalendarContext()
   const { user } = useAuth()
   const [showBookingDialog, setShowBookingDialog] = useState(false)
   const [showBookingsDialog, setShowBookingsDialog] = useState(false)
@@ -76,7 +76,7 @@ export function CalendarHeader() {
             </Button>
           </div>
 
-          <div className="flex items-center gap-1 rounded-lg border border-border p-1">
+          <div className="hidden md:flex items-center gap-1 rounded-lg border border-border p-1">
             {(["month", "week", "day"] as const).map((viewType) => (
               <Button
                 key={viewType}
@@ -90,7 +90,24 @@ export function CalendarHeader() {
             ))}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            {/* Date range filters */}
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                value={filters.from ? new Date(filters.from).toISOString().slice(0, 10) : ""}
+                onChange={(e) => setFilters({ ...filters, from: e.target.value ? new Date(e.target.value) : undefined })}
+                className="h-8 rounded-md border border-border bg-background px-2 text-sm"
+              />
+              <span className="text-sm text-muted-foreground">to</span>
+              <input
+                type="date"
+                value={filters.to ? new Date(filters.to).toISOString().slice(0, 10) : ""}
+                onChange={(e) => setFilters({ ...filters, to: e.target.value ? new Date(e.target.value) : undefined })}
+                className="h-8 rounded-md border border-border bg-background px-2 text-sm"
+              />
+            </div>
+
             {user?.role === "admin" && (
               <>
                 <Button variant="outline" className="gap-2 bg-transparent" onClick={() => setShowBookingsDialog(true)}>

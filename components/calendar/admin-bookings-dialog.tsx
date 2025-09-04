@@ -22,7 +22,7 @@ export function AdminBookingsDialog({ open, onOpenChange }: AdminBookingsDialogP
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedEvent, setSelectedEvent] = useState<string | null>(null)
 
-  // Normalize events & bookings to ensure Date objects
+  // Normalize events & bookings to ensure Date objects and attendee info
   const events = useMemo(() => {
     return rawEvents.map((event) => ({
       ...event,
@@ -33,8 +33,13 @@ export function AdminBookingsDialog({ open, onOpenChange }: AdminBookingsDialogP
         .map((b) => ({ ...b, bookedAt: new Date(b.bookedAt) })),
       bookedUsers: rawBookings
         .filter((b) => b.eventId === event.id)
-        .map((b) => users.find((u) => u.id === b.userId))
-        .filter(Boolean),
+        .map((b) => ({
+          id: b.userId,
+          name:
+            (b as any).userName || users.find((u) => u.id === b.userId)?.name || users.find((u) => u.id === b.userId)?.full_name,
+          email: (b as any).userEmail || users.find((u) => u.id === b.userId)?.email,
+        }))
+        .filter((u) => !!u.id),
     }))
   }, [rawEvents, rawBookings, users])
 
@@ -52,10 +57,6 @@ export function AdminBookingsDialog({ open, onOpenChange }: AdminBookingsDialogP
   }, [events, searchTerm])
 
   const totalBookings = rawBookings.length
-  const totalRevenue = rawBookings.reduce((sum, booking) => {
-    const event = rawEvents.find((e) => e.id === booking.eventId)
-    return sum + (event?.price || 0)
-  }, 0)
 
   // Safe formatting helper
   const safeFormat = (date: Date | string, fmt: string) => {
@@ -103,15 +104,7 @@ export function AdminBookingsDialog({ open, onOpenChange }: AdminBookingsDialogP
                 </CardContent>
               </Card>
 
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
-                  <Clock className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">${totalRevenue}</div>
-                </CardContent>
-              </Card>
+              
             </div>
 
             <Card>
@@ -129,11 +122,8 @@ export function AdminBookingsDialog({ open, onOpenChange }: AdminBookingsDialogP
                           <p className="font-medium">{user?.name}</p>
                           <p className="text-sm text-muted-foreground">{event?.title}</p>
                         </div>
-                        <div className="text-right">
-                          <p className="text-sm font-medium">${event?.price || 0}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {safeFormat(booking.bookedAt, "MMM dd, HH:mm")}
-                          </p>
+                        <div className="text-right text-xs text-muted-foreground">
+                          {safeFormat(booking.bookedAt, "MMM dd, HH:mm")}
                         </div>
                       </div>
                     )
@@ -165,9 +155,11 @@ export function AdminBookingsDialog({ open, onOpenChange }: AdminBookingsDialogP
                       <div>
                         <CardTitle className="flex items-center gap-2">
                           {event.title}
-                          <Badge variant={event.availableSpots > 0 ? "default" : "destructive"}>
-                            {event.bookings.length}/{event.capacity}
-                          </Badge>
+                          {typeof event.capacity === "number" ? (
+                            <Badge variant="outline">{event.bookings.length}/{event.capacity}</Badge>
+                          ) : (
+                            <Badge variant="secondary">{event.bookings.length} booked</Badge>
+                          )}
                         </CardTitle>
                         <div className="flex items-center gap-4 text-sm text-muted-foreground mt-2">
                           <span className="flex items-center gap-1">
@@ -180,12 +172,7 @@ export function AdminBookingsDialog({ open, onOpenChange }: AdminBookingsDialogP
                           </span>
                         </div>
                       </div>
-                      <div className="text-right">
-                        <p className="font-semibold">${event.price}</p>
-                        <p className="text-sm text-muted-foreground">
-                          Revenue: ${event.bookings.length * event.price}
-                        </p>
-                      </div>
+                      
                     </div>
                   </CardHeader>
 
@@ -194,18 +181,18 @@ export function AdminBookingsDialog({ open, onOpenChange }: AdminBookingsDialogP
                       <div className="space-y-2">
                         <h4 className="font-medium text-sm">Attendees ({event.bookedUsers.length})</h4>
                         <div className="grid gap-2">
-                          {event.bookedUsers.map((user) => (
-                            <div key={user?.id} className="flex items-center justify-between p-2 bg-muted rounded">
+                          {event.bookedUsers.map((att) => (
+                            <div key={att?.id as string} className="flex items-center justify-between p-2 bg-muted rounded">
                               <div>
-                                <p className="font-medium text-sm">{user?.name}</p>
+                                <p className="font-medium text-sm">{att?.name}</p>
                                 <p className="text-xs text-muted-foreground flex items-center gap-1">
                                   <Mail className="w-3 h-3" />
-                                  {user?.email}
+                                  {att?.email}
                                 </p>
                               </div>
                               <Badge variant="outline" className="text-xs">
                                 {safeFormat(
-                                  event.bookings.find((b) => b.userId === user?.id)?.bookedAt ?? "",
+                                  event.bookings.find((b) => b.userId === att?.id)?.bookedAt ?? "",
                                   "MMM dd",
                                 )}
                               </Badge>
@@ -232,10 +219,6 @@ export function AdminBookingsDialog({ open, onOpenChange }: AdminBookingsDialogP
                     .filter((user) => user.role === "user")
                     .map((user) => {
                       const userBookings = rawBookings.filter((b) => b.userId === user.id)
-                      const totalSpent = userBookings.reduce((sum, booking) => {
-                        const event = rawEvents.find((e) => e.id === booking.eventId)
-                        return sum + (event?.price || 0)
-                      }, 0)
 
                       return (
                         <div key={user.id} className="flex items-center justify-between p-4 border rounded-lg">
@@ -245,7 +228,6 @@ export function AdminBookingsDialog({ open, onOpenChange }: AdminBookingsDialogP
                           </div>
                           <div className="text-right">
                             <p className="font-medium">{userBookings.length} bookings</p>
-                            <p className="text-sm text-muted-foreground">Total: ${totalSpent}</p>
                           </div>
                         </div>
                       )

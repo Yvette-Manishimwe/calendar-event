@@ -7,13 +7,16 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useCalendarContext } from "./calendar-provider"
+import { EVENT_CATEGORY_COLORS } from "@/lib/types"
 import { useAuth } from "@/hooks/use-auth"
 import { Calendar, Clock, MapPin, Users, Search, Ticket, CheckCircle } from "lucide-react"
 import { format, isAfter } from "date-fns"
+import { useToast } from "@/hooks/use-toast"
 
 export function UserEventBrowser() {
-  const { events, bookings, bookEvent } = useCalendarContext()
+  const { events, bookings, createBooking, isEventBookedByUser } = useCalendarContext()
   const { user } = useAuth()
+  const { toast } = useToast()
   const [searchTerm, setSearchTerm] = useState("")
   const [categoryFilter, setCategoryFilter] = useState("all")
 
@@ -28,12 +31,17 @@ export function UserEventBrowser() {
 
   // Extract unique categories as objects
   const categories = useMemo(() => {
-    const unique: Record<string, typeof events[0]["category"]> = {}
-    events.forEach((event) => {
-      if (event.category?.id) unique[event.category.id] = event.category
-    })
-    return Object.values(unique)
-  }, [events])
+    return [
+      { id: "MEETING", name: "Meeting" },
+      { id: "PERSONAL", name: "Personal" },
+      { id: "WORK", name: "Work" },
+      { id: "SOCIAL", name: "Social" },
+      { id: "EDUCATION", name: "Education" },
+      { id: "HEALTH", name: "Health" },
+      { id: "TRAVEL", name: "Travel" },
+      { id: "OTHER", name: "Other" },
+    ]
+  }, [])
 
   const filteredEvents = useMemo(() => {
     return availableEvents.filter((event) => {
@@ -43,27 +51,24 @@ export function UserEventBrowser() {
         event.location?.toLowerCase().includes(searchTerm.toLowerCase())
 
       const matchesCategory =
-        categoryFilter === "all" || (event.category && event.category.id === categoryFilter)
+        categoryFilter === "all" || (event.category && event.category === categoryFilter)
 
       return matchesSearch && matchesCategory
     })
   }, [availableEvents, searchTerm, categoryFilter])
 
-  const isEventBooked = (eventId: string) => userBookings.some((booking) => booking.eventId === eventId)
+  const isEventBooked = (eventId: string) => (user ? isEventBookedByUser(eventId, user.id) : false)
   const getEventBookingCount = (eventId: string) => bookings.filter((booking) => booking.eventId === eventId).length
 
-  const handleBookEvent = (eventId: string) => {
+  const handleBookEvent = async (eventId: string) => {
     if (!user || isEventBooked(eventId)) return
-
-    bookEvent({
-      id: `booking-${Date.now()}`,
-      eventId,
-      userId: user.id,
-      userName: user.name,
-      userEmail: user.email,
-      bookedAt: new Date().toISOString(),
-      status: "confirmed",
-    })
+    try {
+      await createBooking(eventId)
+      toast({ title: "Booking successful", description: "Your booking has been created." })
+    } catch (e) {
+      // ignore UI error for now
+      toast({ title: "Booking failed", description: "Please try again.", variant: "destructive" })
+    }
   }
 
   return (
@@ -118,7 +123,6 @@ export function UserEventBrowser() {
           {filteredEvents.map((event) => {
             const isBooked = isEventBooked(event.id)
             const bookingCount = getEventBookingCount(event.id)
-            const isFull = event.capacity && bookingCount >= event.capacity
 
             return (
               <Card key={event.id} className="hover:shadow-md transition-shadow">
@@ -148,15 +152,13 @@ export function UserEventBrowser() {
                       </CardDescription>
                     </div>
 
-                    {event.category && (
-                      <Badge
-                        variant="secondary"
-                        className="capitalize"
-                        style={{ backgroundColor: event.category.color }}
-                      >
-                        {event.category.name}
-                      </Badge>
-                    )}
+                    <Badge
+                      variant="secondary"
+                      className="capitalize"
+                      style={{ backgroundColor: EVENT_CATEGORY_COLORS[event.category] }}
+                    >
+                      {event.category}
+                    </Badge>
                   </div>
                 </CardHeader>
 
@@ -165,24 +167,14 @@ export function UserEventBrowser() {
                     <div className="flex items-center gap-4 text-sm text-muted-foreground">
                       <span className="flex items-center gap-1">
                         <Users className="w-4 h-4" />
-                        {bookingCount}
-                        {event.capacity ? ` / ${event.capacity}` : ""} attendees
+                        {bookingCount} attendees
                       </span>
-                      {isFull && (
-                        <Badge variant="destructive" className="text-xs">
-                          Full
-                        </Badge>
-                      )}
                     </div>
 
                     {isBooked ? (
                       <Button disabled className="gap-2">
                         <CheckCircle className="w-4 h-4" />
                         Booked
-                      </Button>
-                    ) : isFull ? (
-                      <Button disabled variant="outline">
-                        Event Full
                       </Button>
                     ) : (
                       <Button

@@ -12,9 +12,10 @@ import { UserDashboard } from "./user-dashboard"
 import { EventListSkeleton } from "./loading-states"
 import { useDebouncedValue } from "@/hooks/use-debounced-value"
 import { format } from "date-fns"
+import { EventCategory, EVENT_CATEGORY_COLORS, EVENT_CATEGORY_LABELS } from "@/lib/types"
 
 export function EventSidebar() {
-  const { events, categories, isLoading } = useCalendarContext()
+  const { events, isLoading } = useCalendarContext()
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
 
@@ -25,7 +26,7 @@ export function EventSidebar() {
       const matchesSearch =
         event.title.toLowerCase().includes(debouncedSearchQuery.toLowerCase()) ||
         event.description?.toLowerCase().includes(debouncedSearchQuery.toLowerCase())
-      const matchesCategory = !selectedCategory || event.category.id === selectedCategory
+      const matchesCategory = !selectedCategory || event.category === selectedCategory
 
       return matchesSearch && matchesCategory
     })
@@ -76,16 +77,19 @@ export function EventSidebar() {
               >
                 All
               </Button>
-              {categories.map((category) => (
+              {Object.values(EventCategory).map((category) => (
                 <Button
-                  key={category.id}
-                  variant={selectedCategory === category.id ? "default" : "outline"}
+                  key={category}
+                  variant={selectedCategory === category ? "default" : "outline"}
                   size="sm"
-                  onClick={() => setSelectedCategory(category.id)}
+                  onClick={() => setSelectedCategory(category)}
                   className="gap-1"
                 >
-                  <div className={`w-2 h-2 rounded-full ${category.color}`} />
-                  {category.name}
+                  <div 
+                    className="w-2 h-2 rounded-full" 
+                    style={{ backgroundColor: EVENT_CATEGORY_COLORS[category] }}
+                  />
+                  {EVENT_CATEGORY_LABELS[category]}
                 </Button>
               ))}
             </div>
@@ -125,7 +129,10 @@ export function EventSidebar() {
                   upcomingEvents.map((event) => (
                     <Card key={event.id} className="p-3 hover:shadow-md transition-shadow cursor-pointer">
                       <div className="flex items-start gap-3">
-                        <div className={`w-3 h-3 rounded-full ${event.category.color} mt-1 flex-shrink-0`} />
+                        <div 
+                          className="w-3 h-3 rounded-full mt-1 flex-shrink-0" 
+                          style={{ backgroundColor: EVENT_CATEGORY_COLORS[event.category] }}
+                        />
                         <div className="flex-1 min-w-0">
                           <div className="font-medium text-sm truncate">{event.title}</div>
                           <div className="text-xs text-muted-foreground mt-1">
@@ -135,7 +142,7 @@ export function EventSidebar() {
                             <div className="text-xs text-muted-foreground mt-1 truncate">📍 {event.location}</div>
                           )}
                           <Badge variant="outline" className="mt-2 text-xs">
-                            {event.category.name}
+                            {EVENT_CATEGORY_LABELS[event.category]}
                           </Badge>
                         </div>
                       </div>

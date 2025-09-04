@@ -11,18 +11,16 @@ import { useCalendarContext } from "./calendar-provider"
 import { Button } from "@/components/ui/button"
 import { Calendar, BarChart3, Ticket, Search } from "lucide-react"
 import { useAuthContext } from "@/components/auth/auth-provider"
-import { LoginForm } from "@/components/auth/login-form"
 import { UserSwitcher } from "@/components/auth/user-switcher"
 import { RealTimeNotifications } from "./real-time-notifications"
 
 export function CalendarLayout() {
   const { view } = useCalendarContext()
   const [mainView, setMainView] = useState<"calendar" | "dashboard" | "browse">("calendar")
-  const { user, isAuthenticated } = useAuthContext()
+  const { user, isAuthenticated, loading } = useAuthContext()
 
-  if (!isAuthenticated) {
-    return <LoginForm />
-  }
+  if (loading) return null
+  if (!isAuthenticated) return null
 
   return (
     <div className="flex h-screen bg-background">
