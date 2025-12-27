@@ -10,33 +10,69 @@ import {
   loadBookingsFromStorage,
   saveBookingsToStorage,
 } from "@/lib/event-store"
+import { EventsApi, BookingsApi } from "@/lib/api"
 
 export function useCalendar() {
   const [events, setEvents] = useState<Event[]>([])
-  const [categories, setCategories] = useState<EventCategory[]>([])
+  // Categories removed - using enum instead
   const [bookings, setBookings] = useState<Booking[]>([])
   const [view, setView] = useState<CalendarView>({ type: "month", currentDate: new Date() })
   const [isLoading, setIsLoading] = useState(true)
 
-  // Load data
+  // Load data from backend
   useEffect(() => {
-    setIsLoading(true)
-    const loadedEvents = loadEventsFromStorage().map((e) => {
-      const start = new Date(e.startTime)
-      const end = new Date(e.endTime)
-      return {
-        ...e,
-        startTime: isNaN(start.getTime()) ? new Date() : start,
-        endTime: isNaN(end.getTime()) ? new Date() : end,
-        createdAt: new Date(e.createdAt),
-        updatedAt: new Date(e.updatedAt),
-      }
-    })
-    setEvents(loadedEvents)
+    const loadData = async () => {
+      setIsLoading(true)
+      try {
+        // Load from backend
+        const [backendEvents, backendBookings] = await Promise.all([
+          EventsApi.list(),
+          BookingsApi.listMine().catch(() => []), // fallback to empty array if not authenticated
+        ])
 
-    setCategories(loadCategoriesFromStorage())
-    setBookings(loadBookingsFromStorage())
-    setIsLoading(false)
+        // Transform backend data to frontend format
+        const transformedEvents = backendEvents.map((e: any) => ({
+          id: e.id,
+          title: e.title,
+          description: e.description,
+          startTime: new Date(e.startTime),
+          endTime: new Date(e.endTime),
+          category: e.category,
+          location: e.location,
+          isAllDay: e.isAllDay,
+          color: e.color,
+          isPublic: e.isPublic,
+          requiresApproval: e.requiresApproval,
+          capacity: e.capacity,
+          createdBy: e.createdBy?.id || e.createdBy,
+          createdAt: new Date(e.createdAt),
+          updatedAt: new Date(e.updatedAt),
+          bookings: e.bookings || [],
+        }))
+
+        setEvents(transformedEvents)
+        setBookings(backendBookings)
+      } catch (error) {
+        console.error("Failed to load data from backend, falling back to local storage:", error)
+        // Fallback to local storage
+        const loadedEvents = loadEventsFromStorage().map((e) => {
+          const start = new Date(e.startTime)
+          const end = new Date(e.endTime)
+          return {
+            ...e,
+            startTime: isNaN(start.getTime()) ? new Date() : start,
+            endTime: isNaN(end.getTime()) ? new Date() : end,
+            createdAt: new Date(e.createdAt),
+            updatedAt: new Date(e.updatedAt),
+          }
+        })
+        setEvents(loadedEvents)
+        setBookings(loadBookingsFromStorage())
+      }
+      setIsLoading(false)
+    }
+
+    loadData()
   }, [])
 
   // Save events safely
@@ -56,12 +92,7 @@ export function useCalendar() {
     }
   }, [events, isLoading])
 
-  useEffect(() => {
-    if (!isLoading) {
-      const timeoutId = setTimeout(() => saveCategoriesStorage(categories), 500)
-      return () => clearTimeout(timeoutId)
-    }
-  }, [categories, isLoading])
+  // Categories effect removed - using enum instead
 
   useEffect(() => {
     if (!isLoading) {
@@ -71,27 +102,88 @@ export function useCalendar() {
   }, [bookings, isLoading])
 
   const addEvent = useCallback(
-    (newEvent: Omit<Event, "id" | "createdAt" | "updatedAt">) => {
-      const event: Event = { ...newEvent, id: crypto.randomUUID(), createdAt: new Date(), updatedAt: new Date() }
-      setEvents((prev) => [...prev, event])
-      return event
+    async (newEvent: Omit<Event, "id" | "createdAt" | "updatedAt">) => {
+      try {
+        const createdEvent = await EventsApi.create({
+          title: newEvent.title,
+          description: newEvent.description,
+          startTime: newEvent.startTime.toISOString(),
+          endTime: newEvent.endTime.toISOString(),
+          category: newEvent.category,
+          location: newEvent.location,
+          isAllDay: newEvent.isAllDay,
+          color: newEvent.color,
+          isPublic: newEvent.isPublic,
+          requiresApproval: newEvent.requiresApproval,
+          capacity: newEvent.capacity,
+        })
+        
+        const event: Event = {
+          ...newEvent,
+          id: createdEvent.id,
+          createdAt: new Date(createdEvent.createdAt),
+          updatedAt: new Date(createdEvent.updatedAt),
+        }
+        setEvents((prev) => [...prev, event])
+        return event
+      } catch (error) {
+        console.error("Failed to create event:", error)
+        // Fallback to local creation
+        const event: Event = { ...newEvent, id: crypto.randomUUID(), createdAt: new Date(), updatedAt: new Date() }
+        setEvents((prev) => [...prev, event])
+        return event
+      }
     },
     []
   )
 
   const updateEvent = useCallback(
-    (id: string, updates: Partial<Event>) => {
-      setEvents((prev) => prev.map((e) => (e.id === id ? { ...e, ...updates, updatedAt: new Date() } : e)))
+    async (id: string, updates: Partial<Event>) => {
+      try {
+        await EventsApi.update(id, {
+          ...updates,
+          startTime: updates.startTime?.toISOString(),
+          endTime: updates.endTime?.toISOString(),
+          category: updates.category,
+        })
+        setEvents((prev) => prev.map((e) => (e.id === id ? { ...e, ...updates, updatedAt: new Date() } : e)))
+      } catch (error) {
+        console.error("Failed to update event:", error)
+        // Fallback to local update
+        setEvents((prev) => prev.map((e) => (e.id === id ? { ...e, ...updates, updatedAt: new Date() } : e)))
+      }
     },
     []
   )
 
-  const deleteEvent = useCallback((id: string) => setEvents((prev) => prev.filter((e) => e.id !== id)), [])
+  const deleteEvent = useCallback(
+    async (id: string) => {
+      try {
+        await EventsApi.delete(id)
+        setEvents((prev) => prev.filter((e) => e.id !== id))
+      } catch (error) {
+        console.error("Failed to delete event:", error)
+        // Fallback to local deletion
+        setEvents((prev) => prev.filter((e) => e.id !== id))
+      }
+    },
+    []
+  )
 
   const moveEvent = useCallback(
-    (eventId: string, newStartTime: Date, newEndTime: Date) => {
+    async (eventId: string, newStartTime: Date, newEndTime: Date) => {
       if (isNaN(newStartTime.getTime()) || isNaN(newEndTime.getTime())) return
-      updateEvent(eventId, { startTime: newStartTime, endTime: newEndTime })
+      try {
+        await EventsApi.move(eventId, {
+          startTime: newStartTime.toISOString(),
+          endTime: newEndTime.toISOString(),
+        })
+        updateEvent(eventId, { startTime: newStartTime, endTime: newEndTime })
+      } catch (error) {
+        console.error("Failed to move event:", error)
+        // Fallback to local move
+        updateEvent(eventId, { startTime: newStartTime, endTime: newEndTime })
+      }
     },
     [updateEvent]
   )
@@ -102,13 +194,38 @@ export function useCalendar() {
   )
 
   const getEventBookings = (eventId: string) => {
-  return bookings.filter(b => b.eventId === eventId)
-}
+    return bookings.filter(b => b.eventId === eventId)
+  }
 
+  const createBooking = useCallback(
+    async (eventId: string) => {
+      try {
+        const booking = await BookingsApi.create({ eventId })
+        setBookings((prev) => [...prev, booking])
+        return booking
+      } catch (error) {
+        console.error("Failed to create booking:", error)
+        throw error
+      }
+    },
+    []
+  )
+
+  const cancelBooking = useCallback(
+    async (bookingId: string) => {
+      try {
+        await BookingsApi.cancel(bookingId)
+        setBookings((prev) => prev.filter(b => b.id !== bookingId))
+      } catch (error) {
+        console.error("Failed to cancel booking:", error)
+        throw error
+      }
+    },
+    []
+  )
 
   return {
     events,
-    categories,
     bookings,
     view,
     setView,
@@ -118,8 +235,10 @@ export function useCalendar() {
     deleteEvent,
     moveEvent,
     getEventsForDate,
-      isEventBookedByUser: (eventId: string, userId: string) =>
-    bookings.some(b => b.eventId === eventId && b.userId === userId),
-    getEventBookings
+    isEventBookedByUser: (eventId: string, userId: string) =>
+      bookings.some(b => b.eventId === eventId && b.userId === userId),
+    getEventBookings,
+    createBooking,
+    cancelBooking,
   }
 }

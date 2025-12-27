@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { useAuth } from "@/hooks/use-auth"
+import { AuthApi } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -11,22 +12,24 @@ import { Eye, EyeOff, AlertCircle } from "lucide-react"
 import { useRouter } from "next/navigation"
 
 export function RegisterForm() {
-  const { users, login, setUsers } = useAuth()
+  const { users } = useAuth()
   const router = useRouter()
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [phone, setPhone] = useState("")
+  const [gender, setGender] = useState("MALE")
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState("")
   const [isLoading, setIsLoading] = useState(false)
 
-  const handleRegister = (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
     setError("")
 
     // simple validation
-    if (!name || !email || !password) {
+    if (!name || !email || !password || !phone) {
       setError("All fields are required.")
       setIsLoading(false)
       return
@@ -37,21 +40,20 @@ export function RegisterForm() {
       setIsLoading(false)
       return
     }
-
-    const newUser = {
-      id: `user-${Date.now()}`,
-      name,
-      email,
-      password,
-      role: "user" as const,
-      avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${name.replace(/\s+/g, "")}`,
-      createdAt: new Date(),
+    try {
+      await AuthApi.registerUser({
+        full_name: name,
+        phone_number: phone,
+        email,
+        gender,
+        password,
+      })
+      router.push("/login")
+    } catch (e: any) {
+      setError(e.message || "Failed to register")
+    } finally {
+      setIsLoading(false)
     }
-
-    setUsers([...users, newUser]) // save to auth storage
-    login(newUser) // auto-login after registration
-    router.push("/user-portal")
-    setIsLoading(false)
   }
 
   return (
@@ -85,6 +87,27 @@ export function RegisterForm() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="phone">Phone number</Label>
+              <Input
+                id="phone"
+                type="tel"
+                placeholder="Enter your phone number"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="gender">Gender</Label>
+              <Input
+                id="gender"
+                type="text"
+                placeholder="MALE or FEMALE"
+                value={gender}
+                onChange={(e) => setGender(e.target.value)}
               />
             </div>
             <div className="space-y-2">

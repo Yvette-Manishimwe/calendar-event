@@ -15,6 +15,8 @@ export function UserBookingDashboard() {
   const { events, bookings, cancelBooking } = useCalendarContext()
   const { user } = useAuth()
   const [searchTerm, setSearchTerm] = useState("")
+  const [sortKey, setSortKey] = useState<"date" | "title">("date")
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc")
 
   // Filter bookings for current user
   const userBookings = useMemo(() => {
@@ -52,6 +54,19 @@ export function UserBookingDashboard() {
       item.event.location?.toLowerCase().includes(searchTerm.toLowerCase())
   )
 
+  const sortFn = (a: any, b: any) => {
+    if (sortKey === "date") {
+      const av = new Date(a.event.startTime).getTime()
+      const bv = new Date(b.event.startTime).getTime()
+      return sortDir === "asc" ? av - bv : bv - av
+    }
+    const av = a.event.title.localeCompare(b.event.title)
+    return sortDir === "asc" ? av : -av
+  }
+
+  const sortedUpcoming = [...filteredUpcoming].sort(sortFn)
+  const sortedPast = [...filteredPast].sort(sortFn)
+
   const handleCancelBooking = (bookingId: string) => {
     cancelBooking(bookingId)
   }
@@ -76,15 +91,21 @@ export function UserBookingDashboard() {
         </div>
       </div>
 
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-        <Input
-          placeholder="Search your bookings..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="pl-10"
-        />
+      {/* Search + Sort */}
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+          <Input
+            placeholder="Search your bookings..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-10"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => setSortKey(sortKey === "date" ? "title" : "date")}>{sortKey === "date" ? "Sort: Date" : "Sort: Title"}</Button>
+          <Button variant="outline" size="sm" onClick={() => setSortDir(sortDir === "asc" ? "desc" : "asc")}>{sortDir === "asc" ? "Asc" : "Desc"}</Button>
+        </div>
       </div>
 
       {/* Tabs */}
@@ -102,7 +123,7 @@ export function UserBookingDashboard() {
 
         {/* Upcoming Bookings */}
         <TabsContent value="upcoming" className="space-y-4">
-          {filteredUpcoming.length === 0 ? (
+          {sortedUpcoming.length === 0 ? (
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-12">
                 <Calendar className="w-12 h-12 text-muted-foreground mb-4" />
@@ -114,7 +135,7 @@ export function UserBookingDashboard() {
             </Card>
           ) : (
             <div className="grid gap-4">
-              {filteredUpcoming.map((item) => (
+              {sortedUpcoming.map((item) => (
                 <Card key={item.id} className="hover:shadow-md transition-shadow">
                   <CardHeader className="pb-3">
                     <div className="flex items-start justify-between">
@@ -172,7 +193,7 @@ export function UserBookingDashboard() {
 
         {/* Past Bookings */}
         <TabsContent value="past" className="space-y-4">
-          {filteredPast.length === 0 ? (
+          {sortedPast.length === 0 ? (
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-12">
                 <CheckCircle className="w-12 h-12 text-muted-foreground mb-4" />
@@ -184,7 +205,7 @@ export function UserBookingDashboard() {
             </Card>
           ) : (
             <div className="grid gap-4">
-              {filteredPast.map((item) => (
+              {sortedPast.map((item) => (
                 <Card key={item.id} className="opacity-75">
                   <CardHeader className="pb-3">
                     <div className="flex items-start justify-between">
