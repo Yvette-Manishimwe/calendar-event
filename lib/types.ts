@@ -18,10 +18,37 @@ export interface Event {
   requiresApproval: boolean // Whether bookings need admin approval
 }
 
-export interface EventCategory {
-  id: string
-  name: string
-  color: string
+export enum EventCategory {
+  MEETING = 'MEETING',
+  PERSONAL = 'PERSONAL', 
+  WORK = 'WORK',
+  SOCIAL = 'SOCIAL',
+  EDUCATION = 'EDUCATION',
+  HEALTH = 'HEALTH',
+  TRAVEL = 'TRAVEL',
+  OTHER = 'OTHER'
+}
+
+export const EVENT_CATEGORY_COLORS = {
+  [EventCategory.MEETING]: '#3B82F6', // blue
+  [EventCategory.PERSONAL]: '#10B981', // green
+  [EventCategory.WORK]: '#F59E0B', // yellow
+  [EventCategory.SOCIAL]: '#EF4444', // red
+  [EventCategory.EDUCATION]: '#8B5CF6', // purple
+  [EventCategory.HEALTH]: '#06B6D4', // cyan
+  [EventCategory.TRAVEL]: '#F97316', // orange
+  [EventCategory.OTHER]: '#6B7280', // gray
+}
+
+export const EVENT_CATEGORY_LABELS = {
+  [EventCategory.MEETING]: 'Meeting',
+  [EventCategory.PERSONAL]: 'Personal',
+  [EventCategory.WORK]: 'Work',
+  [EventCategory.SOCIAL]: 'Social',
+  [EventCategory.EDUCATION]: 'Education',
+  [EventCategory.HEALTH]: 'Health',
+  [EventCategory.TRAVEL]: 'Travel',
+  [EventCategory.OTHER]: 'Other',
 }
 
 export interface CalendarView {
@@ -64,5 +91,13 @@ export interface EventBooking {
   userName: string
   userEmail: string
   bookedAt: Date
-  status: "confirmed" | "cancelled"
+  status: "confirmed" | "cancelled" | "pending"
+}
+
+export interface Booking {
+  id: string
+  eventId: string
+  userId: string
+  bookedAt: Date
+  status: "confirmed" | "cancelled" | "pending"
 }

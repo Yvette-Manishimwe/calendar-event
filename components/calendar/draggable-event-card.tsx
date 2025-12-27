@@ -4,7 +4,7 @@ import type React from "react"
 
 import { useState } from "react"
 import { format } from "date-fns"
-import type { Event } from "@/lib/types"
+import { EVENT_CATEGORY_COLORS, type Event } from "@/lib/types"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Clock, MapPin, GripVertical, Edit, Trash2, Users } from "lucide-react"
@@ -13,6 +13,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { EventBookingDialog } from "./event-booking-dialog"
 import { useCalendarContext } from "./calendar-provider"
 import { useAuth } from "@/hooks/use-auth"
+import { BookingsApi } from "@/lib/api"
 
 interface DraggableEventCardProps {
   event: Event
@@ -23,15 +24,18 @@ interface DraggableEventCardProps {
 
 export function DraggableEventCard({ event, variant = "compact", onDragStart, onDragEnd }: DraggableEventCardProps) {
   const { title, startTime, endTime, location, category } = event
-  const { deleteEvent, getEventBookings, addBooking, isEventBookedByUser } = useCalendarContext()
-  const { user } = useAuth()
+  const { deleteEvent, getEventBookings, isEventBookedByUser, createBooking } = useCalendarContext()
+ 
   const [isDragging, setIsDragging] = useState(false)
   const [showEditDialog, setShowEditDialog] = useState(false)
 
+  const { user } = useAuth()   // get the current user
   const eventBookings = getEventBookings(event.id)
   const isBooked = user ? isEventBookedByUser(event.id, user.id) : false
-  const availableSpots = event.capacity - eventBookings.length
+  const availableSpots = typeof event.capacity === "number" ? Math.max(event.capacity - eventBookings.length, 0) : Infinity
   const isAdmin = user?.role === "admin"
+
+
 
   const handleDragStart = (e: React.DragEvent) => {
     if (!isAdmin) {
@@ -71,10 +75,14 @@ export function DraggableEventCard({ event, variant = "compact", onDragStart, on
     }
   }
 
-  const handleBookEvent = (e: React.MouseEvent) => {
+  const handleBookEvent = async (e: React.MouseEvent) => {
     e.stopPropagation()
-    if (user && !isBooked && availableSpots > 0) {
-      addBooking(event.id, user.id)
+    if (!user) return
+  
+    try {
+      await createBooking(event.id)
+    } catch (err) {
+      console.error("Booking failed:", err)
     }
   }
 
@@ -102,6 +110,7 @@ export function DraggableEventCard({ event, variant = "compact", onDragStart, on
   )
 
   const UserActions = () => (
+    
     <Button
       variant={isBooked ? "secondary" : "default"}
       size="sm"
@@ -116,17 +125,21 @@ export function DraggableEventCard({ event, variant = "compact", onDragStart, on
   if (variant === "compact") {
     return (
       <>
-        <div
-          draggable={isAdmin}
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
-          className={`
-            ${category.color} text-white text-xs p-1 rounded truncate
-            hover:shadow-md transition-all group
-            ${isAdmin ? "cursor-move" : "cursor-pointer"}
-            ${isDragging ? "opacity-50 scale-95" : ""}
-          `}
-        >
+<div
+  draggable={isAdmin}
+  onDragStart={handleDragStart}
+  onDragEnd={handleDragEnd}
+  className={`
+    text-white text-xs p-1 rounded truncate
+    hover:shadow-md transition-all group
+    ${isAdmin ? "cursor-move" : "cursor-pointer"}
+    ${isDragging ? "opacity-50 scale-95" : ""}
+  `}
+  style={{ backgroundColor: EVENT_CATEGORY_COLORS[category] }}
+>
+  
+
+
           <div className="flex items-center gap-1">
             {isAdmin && <GripVertical className="w-3 h-3 opacity-0 group-hover:opacity-70 transition-opacity" />}
             <div className="flex-1 min-w-0">

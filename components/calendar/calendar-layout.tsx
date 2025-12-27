@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { CalendarHeader } from "./calendar-header"
-import { CalendarGrid } from "./calendar-grid"
+import dynamic from "next/dynamic"
 import { EventSidebar } from "./event-sidebar"
 import { UserDashboard } from "./user-dashboard"
 import { UserBookingDashboard } from "./user-booking-dashboard"
@@ -11,18 +11,18 @@ import { useCalendarContext } from "./calendar-provider"
 import { Button } from "@/components/ui/button"
 import { Calendar, BarChart3, Ticket, Search } from "lucide-react"
 import { useAuthContext } from "@/components/auth/auth-provider"
-import { LoginForm } from "@/components/auth/login-form"
 import { UserSwitcher } from "@/components/auth/user-switcher"
 import { RealTimeNotifications } from "./real-time-notifications"
 
 export function CalendarLayout() {
   const { view } = useCalendarContext()
   const [mainView, setMainView] = useState<"calendar" | "dashboard" | "browse">("calendar")
-  const { user, isAuthenticated } = useAuthContext()
+  const { user, isAuthenticated, loading } = useAuthContext()
 
-  if (!isAuthenticated) {
-    return <LoginForm />
-  }
+  if (loading) return null
+  if (!isAuthenticated) return null
+
+  const CalendarGrid = dynamic(() => import("./calendar-grid").then(m => m.CalendarGrid), { ssr: false })
 
   return (
     <div className="flex h-screen bg-background">

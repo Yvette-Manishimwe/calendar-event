@@ -5,17 +5,24 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useCalendarContext } from "./calendar-provider"
 import { useAuth } from "@/hooks/use-auth"
 import { Calendar, Clock, MapPin, Users, Search, Ticket, CheckCircle } from "lucide-react"
-import { format, isAfter } from "date-fns"
+import { format, isAfter, isWithinInterval } from "date-fns"
+import { useToast } from "@/hooks/use-toast"
 
 export function UserEventBrowser() {
-  const { events, bookings, bookEvent } = useCalendarContext()
+  const { events, bookings, createBooking } = useCalendarContext()
   const { user } = useAuth()
   const [searchTerm, setSearchTerm] = useState("")
   const [categoryFilter, setCategoryFilter] = useState("all")
+  const [dateFrom, setDateFrom] = useState<string>("")
+  const [dateTo, setDateTo] = useState<string>("")
+  const [detailsEventId, setDetailsEventId] = useState<string | null>(null)
+  const [bookingLoadingId, setBookingLoadingId] = useState<string | null>(null)
+  const { toast } = useToast()
 
   const userBookings = useMemo(() => {
     if (!user) return []
@@ -45,25 +52,37 @@ export function UserEventBrowser() {
       const matchesCategory =
         categoryFilter === "all" || (event.category && event.category.id === categoryFilter)
 
-      return matchesSearch && matchesCategory
+      const matchesDate = (() => {
+        if (!dateFrom && !dateTo) return true
+        const start = new Date(event.startTime)
+        const from = dateFrom ? new Date(dateFrom) : undefined
+        const to = dateTo ? new Date(dateTo) : undefined
+        if (from && to) return isWithinInterval(start, { start: from, end: to })
+        if (from) return start >= from
+        if (to) return start <= to
+        return true
+      })()
+
+      return matchesSearch && matchesCategory && matchesDate
     })
-  }, [availableEvents, searchTerm, categoryFilter])
+  }, [availableEvents, searchTerm, categoryFilter, dateFrom, dateTo])
 
   const isEventBooked = (eventId: string) => userBookings.some((booking) => booking.eventId === eventId)
   const getEventBookingCount = (eventId: string) => bookings.filter((booking) => booking.eventId === eventId).length
 
-  const handleBookEvent = (eventId: string) => {
+  const handleBookEvent = async (eventId: string) => {
     if (!user || isEventBooked(eventId)) return
-
-    bookEvent({
-      id: `booking-${Date.now()}`,
-      eventId,
-      userId: user.id,
-      userName: user.name,
-      userEmail: user.email,
-      bookedAt: new Date().toISOString(),
-      status: "confirmed",
-    })
+    try {
+      setBookingLoadingId(eventId)
+      // Optimistic UX: show toast immediately, backend will update context and admin notifications
+      const t = toast({ title: "Booking...", description: "Reserving your spot." })
+      await createBooking(eventId)
+      t.update({ title: "Booked", description: "Your booking is confirmed.", open: true })
+    } catch (e) {
+      console.error("Booking failed", e)
+      toast({ title: "Booking failed", description: "Please try again.", variant: "destructive" as any })
+    }
+    setBookingLoadingId(null)
   }
 
   return (
@@ -103,6 +122,21 @@ export function UserEventBrowser() {
             ))}
           </SelectContent>
         </Select>
+
+        <Input
+          type="date"
+          value={dateFrom}
+          onChange={(e) => setDateFrom(e.target.value)}
+          className="w-40"
+          placeholder="From"
+        />
+        <Input
+          type="date"
+          value={dateTo}
+          onChange={(e) => setDateTo(e.target.value)}
+          className="w-40"
+          placeholder="To"
+        />
       </div>
 
       {filteredEvents.length === 0 ? (
@@ -121,7 +155,7 @@ export function UserEventBrowser() {
             const isFull = event.capacity && bookingCount >= event.capacity
 
             return (
-              <Card key={event.id} className="hover:shadow-md transition-shadow">
+              <Card key={event.id} className="hover:shadow-md transition-shadow" onClick={() => setDetailsEventId(event.id)}>
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
@@ -188,9 +222,10 @@ export function UserEventBrowser() {
                       <Button
                         onClick={() => handleBookEvent(event.id)}
                         className="gap-2 bg-gradient-to-r from-pink-600 to-pink-700 hover:from-pink-700 hover:to-pink-800"
+                        disabled={bookingLoadingId === event.id}
                       >
                         <Ticket className="w-4 h-4" />
-                        Book Event
+                        {bookingLoadingId === event.id ? "Booking..." : "Book Event"}
                       </Button>
                     )}
                   </div>
@@ -200,6 +235,38 @@ export function UserEventBrowser() {
           })}
         </div>
       )}
+
+      {/* Details Modal */}
+      <Dialog open={!!detailsEventId} onOpenChange={(open) => !open && setDetailsEventId(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Event Details</DialogTitle>
+          </DialogHeader>
+          {(() => {
+            const ev = filteredEvents.find(e => e.id === detailsEventId)
+            if (!ev) return null
+            return (
+              <div className="space-y-2">
+                <div className="text-lg font-semibold">{ev.title}</div>
+                {ev.description && <div className="text-sm text-muted-foreground">{ev.description}</div>}
+                <div className="text-sm flex items-center gap-2">
+                  <Calendar className="w-4 h-4" />
+                  {format(new Date(ev.startTime), "MMM dd, yyyy")} • {format(new Date(ev.startTime), "h:mm a")} - {format(new Date(ev.endTime), "h:mm a")}
+                </div>
+                {ev.location && (
+                  <div className="text-sm flex items-center gap-2">
+                    <MapPin className="w-4 h-4" /> {ev.location}
+                  </div>
+                )}
+                <div className="text-sm">
+                  <Users className="inline w-4 h-4 mr-1" />
+                  {getEventBookingCount(ev.id)}{ev.capacity ? ` / ${ev.capacity}` : ""} attending
+                </div>
+              </div>
+            )
+          })()}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
